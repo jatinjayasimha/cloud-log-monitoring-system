@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Log Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body{background:#0f172a;color:white;font-family:'Segoe UI';padding:20px;}
+.container{max-width:1100px;margin:auto;}
+
+button{
+padding:8px 12px;
+border:none;
+border-radius:6px;
+background:#22c55e;
+color:white;
+cursor:pointer;
+margin-bottom:10px;
+}
+
+.cards{display:flex;gap:10px;margin-bottom:10px;}
+.card{flex:1;padding:12px;border-radius:8px;text-align:center;}
+.info{background:#2563eb;}
+.warning{background:#f59e0b;}
+.error{background:#dc2626;}
+
+input,select{padding:6px;margin:5px;border-radius:5px;}
+
+table{width:100%;background:#1e293b;border-collapse:collapse;}
+th,td{padding:8px;text-align:center;border-bottom:1px solid #444;}
+
+.ERROR{color:red;}
+.WARNING{color:yellow;}
+.INFO{color:#3b82f6;}
+
+.alert{background:red;padding:10px;margin-bottom:10px;display:none;}
+</style>
+</head>
+
+<body>
+
+<h2>🛡️ Live Log Dashboard</h2>
+
+<button onclick="window.location.href='index.html'">
+⬅ Back to Log Generator
+</button>
+
+<div class="container">
+
+<div id="alertBox" class="alert">⚠️ Error spike detected</div>
+
+<div class="cards">
+<div class="card info">INFO <span id="infoCount">0</span></div>
+<div class="card warning">WARNING <span id="warningCount">0</span></div>
+<div class="card error">ERROR <span id="errorCount">0</span></div>
+</div>
+
+<input id="searchBox" placeholder="Search..." onkeyup="loadLogs()">
+
+<select id="filter" onchange="loadLogs()">
+<option>ALL</option><option>INFO</option><option>WARNING</option><option>ERROR</option>
+</select>
+
+<select id="serviceFilter" onchange="loadLogs()">
+<option value="ALL">All Services</option>
+</select>
+
+<table>
+<thead>
+<tr>
+<th>ID</th><th>Service</th><th>IP</th><th>Message</th><th>Level</th><th>Time</th>
+</tr>
+</thead>
+<tbody id="tableBody"></tbody>
+</table>
+
+<canvas id="levelChart"></canvas>
+<canvas id="serviceChart"></canvas>
+
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.1/firebase-auth-compat.js"></script>
+
+<script>
+const firebaseConfig={
+apiKey:"AIzaSyAhte8VRjmeIj7tbekNT4_V8eziSvP1XQM",
+authDomain:"cloud-log-monitoring-sys-e69b1.firebaseapp.com",
+projectId:"cloud-log-monitoring-sys-e69b1"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db=firebase.firestore();
+firebase.auth().signInAnonymously();
+
+let chart1,chart2;
+
+async function loadLogs(){
+const filter=document.getElementById("filter").value;
+const search=document.getElementById("searchBox").value.toLowerCase();
+const serviceFilter=document.getElementById("serviceFilter").value;
+
+const snapshot=await db.collection("logs").orderBy("timestamp","desc").get();
+
+let table="",info=0,warning=0,error=0;
+let recentErrors=0,now=Date.now();
+let services={},serviceSet=new Set();
+
+snapshot.forEach(doc=>{
+const log=doc.data();
+serviceSet.add(log.service);
+
+if((filter!="ALL"&&log.level!=filter)||
+(serviceFilter!="ALL"&&log.service!=serviceFilter)||
+!log.message.toLowerCase().includes(search)) return;
+
+if(log.level=="INFO") info++;
+if(log.level=="WARNING") warning++;
+if(log.level=="ERROR"){
+error++;
+if(log.timestamp&&now-log.timestamp.seconds*1000<60000) recentErrors++;
+}
+
+services[log.service]=(services[log.service]||0)+1;
+
+const time=log.timestamp?new Date(log.timestamp.seconds*1000).toLocaleString():"";
+
+table+=`<tr>
+<td>${log.logId}</td>
+<td>${log.service}</td>
+<td>${log.ip}</td>
+<td>${log.message}</td>
+<td class="${log.level}">${log.level}</td>
+<td>${time}</td>
+</tr>`;
+});
+
+tableBody.innerHTML=table;
+infoCount.innerText=info;
+warningCount.innerText=warning;
+errorCount.innerText=error;
+
+alertBox.style.display=recentErrors>=3?"block":"none";
+
+const dropdown=document.getElementById("serviceFilter");
+dropdown.innerHTML='<option value="ALL">All Services</option>';
+serviceSet.forEach(s=>dropdown.innerHTML+=`<option>${s}</option>`);
+
+if(chart1)chart1.destroy();
+chart1=new Chart(levelChart,{
+type:'doughnut',
+data:{labels:["INFO","WARNING","ERROR"],datasets:[{data:[info,warning,error]}]}
+});
+
+if(chart2)chart2.destroy();
+chart2=new Chart(serviceChart,{
+type:'bar',
+data:{labels:Object.keys(services),datasets:[{data:Object.values(services)}]}
+});
+}
+
+setInterval(loadLogs,2000);
+</script>
+
+</body>
+</html>
